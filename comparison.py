@@ -28,7 +28,7 @@ ALGOS = [
     ("FCFS",               lambda p, q: run_fcfs(p)),
     ("SJF",                lambda p, q: run_sjf(p)),
     ("Priority",           lambda p, q: run_priority(p)),
-    ("Round Robin (q=2)",  lambda p, q: run_rr(p, q)),
+    ("Round Robin",        lambda p, q: run_rr(p, q)),
 ]
 
 ALGO_COLORS = ["#6C63FF", "#4ECDC4", "#FF6B6B", "#FFE66D"]
@@ -190,11 +190,12 @@ class ComparisonWidget(QWidget):
         q = self.quantum.value()
         results = []
         for name, fn in ALGOS:
+            display_name = f"Round Robin (q={q})" if name == "Round Robin" else name
             tl = fn(processes, q)
             m  = compute_metrics(processes, tl)
             avg_wt  = sum(x["wt"]  for x in m) / len(m)
             avg_tat = sum(x["tat"] for x in m) / len(m)
-            results.append({"name": name, "timeline": tl, "metrics": m,
+            results.append({"name": display_name, "timeline": tl, "metrics": m,
                              "avg_wt": avg_wt, "avg_tat": avg_tat})
 
         self._clear_output()
@@ -246,7 +247,7 @@ class ComparisonWidget(QWidget):
             # Algorithm label on left with its accent color
             ax.set_ylabel(result["name"], color=algo_color,
                           fontsize=10, fontweight="bold",
-                          rotation=0, labelpad=8, va="center")
+                          rotation=0, labelpad=15, va="center", ha="right")
             ax.yaxis.set_label_position("left")
 
             # Avg WT badge on right
