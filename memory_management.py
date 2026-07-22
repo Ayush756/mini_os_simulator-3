@@ -17,6 +17,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+import matplotlib.patheffects as pe
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
 PALETTE = {
@@ -152,6 +153,7 @@ class MemoryCanvas(FigureCanvas):
 
     def _render(self):
         n = len(self.block_sizes)
+        max_total = max(self.block_sizes) if n > 0 else 1
 
         # block -> processes revealed so far
         b2p = {j: [] for j in range(n)}
@@ -169,19 +171,23 @@ class MemoryCanvas(FigureCanvas):
             for i in b2p[j]:
                 h     = self.proc_sizes[i]
                 color = PROCESS_COLORS[i % len(PROCESS_COLORS)]
-                ax.bar(0, h, bottom=bottom, width=0.72,
-                       color=color, edgecolor=PALETTE["bg"], linewidth=2)
+                ax.bar(0, h, bottom=bottom, width=0.76,
+                       color=color, edgecolor=PALETTE["bg"], linewidth=3, zorder=3,
+                       path_effects=[
+                           pe.SimplePatchShadow(offset=(2, -2), shadow_rgbFace=(0, 0, 0), alpha=0.35),
+                           pe.Normal()
+                       ])
                 # Label density scales with the segment's share of the block —
                 # forcing a readable font on a sliver-thin segment is what was
                 # causing neighboring labels to overlap, so segments too thin
                 # for a full two-line label fall back to a shorter one, and
                 # segments too thin for that get no in-bar label at all (they
                 # still appear in the legend and results table below).
-                frac = h / total
-                if frac >= 0.05:
-                    fs = max(8, min(14, int(frac * 80)))
+                visual_frac = h / max_total
+                if visual_frac >= 0.05:
+                    fs = max(8, min(14, int(visual_frac * 80)))
                     label = f"{self.proc_labels[i]}\n{h} KB"
-                elif frac >= 0.02:
+                elif visual_frac >= 0.02:
                     fs = 8
                     label = self.proc_labels[i]
                 else:
@@ -190,7 +196,8 @@ class MemoryCanvas(FigureCanvas):
                     ax.text(0, bottom + h / 2, label,
                             ha="center", va="center",
                             color="white", fontsize=fs, fontweight="bold",
-                            clip_on=True)
+                            clip_on=True,
+                            path_effects=[pe.withStroke(linewidth=2.5, foreground=PALETTE["bg"])])
                 bottom += h
 
             # remaining free space — always shown as a block, label only if it fits
@@ -198,15 +205,15 @@ class MemoryCanvas(FigureCanvas):
             used_so_far = sum(self.proc_sizes[i] for i in b2p[j])
             free_so_far = total - used_so_far
             if free_so_far > 0:
-                ax.bar(0, free_so_far, bottom=bottom, width=0.72,
-                       color=PALETTE["free"],
-                       edgecolor=PALETTE["border"], linewidth=1.5,
-                       linestyle="--")
-                frac = free_so_far / total
-                if frac >= 0.05:
-                    fs = max(8, min(14, int(frac * 80)))
+                ax.bar(0, free_so_far, bottom=bottom, width=0.76,
+                       color=PALETTE["free"], alpha=0.7,
+                       edgecolor=PALETTE["border"], linewidth=2,
+                       hatch='////', zorder=3)
+                visual_frac = free_so_far / max_total
+                if visual_frac >= 0.05:
+                    fs = max(8, min(14, int(visual_frac * 80)))
                     free_label = f"Free\n{free_so_far} KB"
-                elif frac >= 0.02:
+                elif visual_frac >= 0.02:
                     fs = 8
                     free_label = "Free"
                 else:
@@ -218,16 +225,22 @@ class MemoryCanvas(FigureCanvas):
                             clip_on=True)
 
             ax.set_xlim(-0.6, 0.6)
-            ax.set_ylim(0, total * 1.06)
+            ax.set_ylim(0, max_total * 1.06)
             ax.set_xticks([])
             ax.set_yticks([0, total])
-            ax.yaxis.set_tick_params(labelsize=9, labelcolor=PALETTE["muted"])
+            ax.yaxis.grid(True, color=PALETTE["border"], linestyle=":", linewidth=1.5, zorder=0)
+            ax.yaxis.set_tick_params(labelsize=10, labelcolor=PALETTE["muted"])
             ax.set_title(f"{self.block_labels[j]}\n{total} KB",
                          color=PALETTE["text"], fontsize=11,
-                         pad=8, fontweight="bold")
-            for spine in ax.spines.values():
-                spine.set_edgecolor(PALETTE["border"])
-                spine.set_linewidth(1.2)
+                         pad=14, fontweight="bold",
+                         bbox=dict(facecolor=PALETTE["surface"], edgecolor=PALETTE["border"],
+                                   boxstyle="round,pad=0.5", linewidth=1.5))
+            
+            for spine in ["top", "right", "bottom"]:
+                ax.spines[spine].set_visible(False)
+            ax.spines["left"].set_edgecolor(PALETTE["border"])
+            ax.spines["left"].set_linewidth(1.5)
+            ax.spines["left"].set_bounds(0, total)
 
         # Legend
         patches = [
@@ -253,9 +266,10 @@ class MemoryCanvas(FigureCanvas):
         self._legend_artist = self.fig.legend(
             handles=patches,
             loc="lower center", ncol=ncol,
-            framealpha=0.4, facecolor=PALETTE["bg"],
+            framealpha=0.8, facecolor=PALETTE["surface"],
             edgecolor=PALETTE["border"], labelcolor=PALETTE["text"],
             fontsize=10, bbox_to_anchor=(0.5, 0.01),
+            shadow=True, fancybox=True
         )
 
         n_allocated = sum(1 for j in self.alloc[:self.n_revealed] if j is not None)
