@@ -23,6 +23,7 @@ PALETTE = {
     "yellow":  "#FFE66D",
     "text":    "#E8E8F0",
     "muted":   "#6B7280",
+    "white":   " #F5F5F0",
 }
 
 TAB_DEFS = [
