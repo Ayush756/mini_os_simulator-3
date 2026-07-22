@@ -8,7 +8,7 @@ import random
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QComboBox, QHeaderView,
-    QFrame, QMessageBox,
+    QFrame, QMessageBox, QScrollArea,
 )
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont, QColor
@@ -120,14 +120,26 @@ class MemoryCanvas(FigureCanvas):
 
         n = len(block_sizes)
         fig_w = max(10, n * 2.2)
-        self.fig, self.axes = plt.subplots(1, n, figsize=(fig_w, 5.5))
+        
+        n_total_patches = len(proc_labels) + 1
+        ncol = min(n_total_patches, 5)
+        max_legend_rows = -(-n_total_patches // ncol)
+        
+        bottom_margin_inches = 0.2 + (0.35 * max_legend_rows)
+        fig_h = 5.0 + 0.6 + bottom_margin_inches
+        
+        self.rect_bottom = bottom_margin_inches / fig_h
+        self.rect_top = (bottom_margin_inches + 5.0) / fig_h
+
+        self.fig, self.axes = plt.subplots(1, n, figsize=(fig_w, fig_h))
         if n == 1:
             self.axes = [self.axes]
         self.fig.patch.set_facecolor(PALETTE["surface"])
 
         super().__init__(self.fig)
         self.setStyleSheet(f"background: {PALETTE['surface']};")
-        self.setMinimumHeight(320)
+        self.setMinimumHeight(int(fig_h * 100))
+        self.setMinimumWidth(int(fig_w * 100))
         self._render()
 
     def reveal_next(self):
@@ -166,10 +178,10 @@ class MemoryCanvas(FigureCanvas):
                 # segments too thin for that get no in-bar label at all (they
                 # still appear in the legend and results table below).
                 frac = h / total
-                if frac >= 0.06:
-                    fs = max(8, min(12, int(frac * 60)))
+                if frac >= 0.05:
+                    fs = max(8, min(14, int(frac * 80)))
                     label = f"{self.proc_labels[i]}\n{h} KB"
-                elif frac >= 0.028:
+                elif frac >= 0.02:
                     fs = 8
                     label = self.proc_labels[i]
                 else:
@@ -177,7 +189,8 @@ class MemoryCanvas(FigureCanvas):
                 if label:
                     ax.text(0, bottom + h / 2, label,
                             ha="center", va="center",
-                            color="white", fontsize=fs, fontweight="bold")
+                            color="white", fontsize=fs, fontweight="bold",
+                            clip_on=True)
                 bottom += h
 
             # remaining free space — always shown as a block, label only if it fits
@@ -190,10 +203,10 @@ class MemoryCanvas(FigureCanvas):
                        edgecolor=PALETTE["border"], linewidth=1.5,
                        linestyle="--")
                 frac = free_so_far / total
-                if frac >= 0.06:
-                    fs = max(8, min(11, int(frac * 60)))
+                if frac >= 0.05:
+                    fs = max(8, min(14, int(frac * 80)))
                     free_label = f"Free\n{free_so_far} KB"
-                elif frac >= 0.028:
+                elif frac >= 0.02:
                     fs = 8
                     free_label = "Free"
                 else:
@@ -201,7 +214,8 @@ class MemoryCanvas(FigureCanvas):
                 if free_label:
                     ax.text(0, bottom + free_so_far / 2, free_label,
                             ha="center", va="center",
-                            color=PALETTE["muted"], fontsize=fs)
+                            color=PALETTE["muted"], fontsize=fs,
+                            clip_on=True)
 
             ax.set_xlim(-0.6, 0.6)
             ax.set_ylim(0, total * 1.06)
@@ -255,12 +269,9 @@ class MemoryCanvas(FigureCanvas):
             color=PALETTE["text"], fontsize=13, fontweight="bold", y=0.99,
         )
 
-        # Reserve real space (not just padding) at the top for the suptitle
-        # and at the bottom for the legend, scaled to how many legend rows
-        # there are — this is what was letting the legend and suptitle
-        # crowd/overlap the axes' tick labels and per-block titles.
-        bottom_margin = 0.12 + 0.055 * (n_legend_rows - 1)
-        self.fig.tight_layout(pad=1.4, rect=[0, bottom_margin, 1, 0.90])
+        # Ensure the axes maintain exactly 5.0 inches of vertical space regardless
+        # of how many legend rows are generated, preventing blocks from squishing.
+        self.fig.tight_layout(pad=1.4, rect=[0, self.rect_bottom, 1, self.rect_top])
         self.draw()
 
 
@@ -473,7 +484,12 @@ class MemoryManagementWidget(QWidget):
         # Build canvas starting with 0 processes revealed
         self._canvas = MemoryCanvas(blabels, bsizes, plabels, psizes,
                                     alloc, rem, algo)
-        self.output_area.addWidget(self._canvas)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet(f"background: {PALETTE['bg']}; border: none;")
+        scroll.setWidget(self._canvas)
+        scroll.setMinimumHeight(self._canvas.minimumHeight() + 20)
+        self.output_area.addWidget(scroll)
 
         # Results table below (shown immediately)
         self._draw_results_table(blabels, bsizes, plabels, psizes, alloc, rem)
@@ -505,6 +521,7 @@ class MemoryManagementWidget(QWidget):
             ["Process", "Size (KB)", "Allocated Block", "Fragmentation (KB)"]
         )
         tbl.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        tbl.horizontalHeader().setMinimumSectionSize(160)
         tbl.verticalHeader().setVisible(False)
         tbl.verticalHeader().setDefaultSectionSize(44)
         tbl.setStyleSheet(TABLE_STYLE)
