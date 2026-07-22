@@ -1,6 +1,7 @@
 # Mini OS Simulator
 
 An educational, GUI-based desktop application that visualizes core Operating System algorithms.
+We try to visualoze the cpu_scheduling , memory camparisons.
 
 ## Requirements
 
@@ -51,3 +52,10 @@ Each module is self-contained. To add a new algorithm:
 To add a new OS domain (e.g., Page Replacement / Banker's Algorithm):
 1. Create a new `page_replacement.py` following the same widget pattern
 2. Import and add it as a new tab in `main.py`'s `TAB_DEFS` list
+
+
+To pretify the markdonw( to see the md preview) use
+1. ctrl + shift + v
+
+To stop the process from running use
+1. Ctrl + z (ctrl +c doesnt work, keyboard interruption prevented in main)
