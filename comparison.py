@@ -10,11 +10,13 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QFrame, QMessageBox,
 )
+# pyrefly: ignore [missing-import]
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QColor
 
 import matplotlib
 matplotlib.use("Agg")
+# pyrefly: ignore [missing-import]
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -28,7 +30,7 @@ ALGOS = [
     ("FCFS",               lambda p, q: run_fcfs(p)),
     ("SJF",                lambda p, q: run_sjf(p)),
     ("Priority",           lambda p, q: run_priority(p)),
-    ("Round Robin (q=2)",  lambda p, q: run_rr(p, q)),
+    ("Round Robin",        lambda p, q: run_rr(p, q)),
 ]
 
 ALGO_COLORS = ["#6C63FF", "#4ECDC4", "#FF6B6B", "#FFE66D"]
@@ -86,9 +88,9 @@ class ComparisonWidget(QWidget):
             q_row.addWidget(b)
         root.addLayout(q_row)
 
-        # ── Process input table (no Priority column — not relevant for comparison)
-        self.proc_table = QTableWidget(0, 3)
-        self.proc_table.setHorizontalHeaderLabels(["PID", "Arrival Time", "Burst Time"])
+        # ── Process input table
+        self.proc_table = QTableWidget(0, 4)
+        self.proc_table.setHorizontalHeaderLabels(["PID", "Arrival Time", "Burst Time", "Priority"])
         self.proc_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.proc_table.verticalHeader().setVisible(False)
         self.proc_table.verticalHeader().setDefaultSectionSize(40)
@@ -112,11 +114,11 @@ class ComparisonWidget(QWidget):
     # ── Helpers ─────────────────────────────────────────────────────────
 
     def _load_defaults(self):
-        for pid, arr, burst in [("P1",0,8),("P2",1,4),("P3",2,9),("P4",3,5)]:
-            self._insert_row(pid, arr, burst)
+        for pid, arr, burst, prio in [("P1",0,8,3),("P2",1,4,1),("P3",2,9,4),("P4",3,5,2)]:
+            self._insert_row(pid, arr, burst, prio)
         self.pid_counter = 5
 
-    def _insert_row(self, pid, arrival, burst):
+    def _insert_row(self, pid, arrival, burst, priority):
         row = self.proc_table.rowCount()
         self.proc_table.insertRow(row)
         pid_item = QTableWidgetItem(pid)
@@ -125,7 +127,7 @@ class ComparisonWidget(QWidget):
         pid_item.setForeground(QColor(PROCESS_COLORS[row % len(PROCESS_COLORS)]))
         pid_item.setFont(QFont("Segoe UI", 13, QFont.Bold))
         self.proc_table.setItem(row, 0, pid_item)
-        for col, val in enumerate([arrival, burst], start=1):
+        for col, val in enumerate([arrival, burst, priority], start=1):
             item = QTableWidgetItem(str(val))
             item.setTextAlignment(Qt.AlignCenter)
             item.setFont(QFont("Segoe UI", 13))
@@ -140,7 +142,8 @@ class ComparisonWidget(QWidget):
         base = max(arrivals) if arrivals else 0
         arrival = base + random.randint(0, 4) if arrivals else random.randint(0, 6)
         burst   = random.randint(2, 12)
-        self._insert_row(f"P{self.pid_counter}", arrival, burst)
+        priority = random.randint(1, 5)
+        self._insert_row(f"P{self.pid_counter}", arrival, burst, priority)
         self.pid_counter += 1
 
     def _clear(self):
@@ -168,10 +171,11 @@ class ComparisonWidget(QWidget):
                 pid     = self.proc_table.item(row, 0).text()
                 arrival = int(self.proc_table.item(row, 1).text())
                 burst   = int(self.proc_table.item(row, 2).text())
+                priority = int(self.proc_table.item(row, 3).text())
                 if burst <= 0:
                     raise ValueError("Burst must be > 0")
                 processes.append({"pid": pid, "arrival": arrival,
-                                   "burst": burst, "priority": 0})
+                                   "burst": burst, "priority": priority})
             except (AttributeError, ValueError) as e:
                 QMessageBox.warning(self, "Input Error", f"Row {row+1}: {e}")
                 return None
@@ -190,11 +194,12 @@ class ComparisonWidget(QWidget):
         q = self.quantum.value()
         results = []
         for name, fn in ALGOS:
+            display_name = f"Round Robin (q={q})" if name == "Round Robin" else name
             tl = fn(processes, q)
             m  = compute_metrics(processes, tl)
             avg_wt  = sum(x["wt"]  for x in m) / len(m)
             avg_tat = sum(x["tat"] for x in m) / len(m)
-            results.append({"name": name, "timeline": tl, "metrics": m,
+            results.append({"name": display_name, "timeline": tl, "metrics": m,
                              "avg_wt": avg_wt, "avg_tat": avg_tat})
 
         self._clear_output()
@@ -262,14 +267,14 @@ class ComparisonWidget(QWidget):
         # Shared legend
         patches = [mpatches.Patch(color=color_map[p["pid"]], label=p["pid"])
                    for p in processes]
-        fig.legend(handles=patches, loc="upper right", ncol=len(processes),
+        fig.legend(handles=patches, loc="upper center", ncol=len(processes),
                    framealpha=0.4, facecolor=PALETTE["bg"],
                    edgecolor=PALETTE["border"], labelcolor=PALETTE["text"],
-                   fontsize=10, bbox_to_anchor=(0.98, 1.0))
+                   fontsize=10, bbox_to_anchor=(0.5, 0.94))
 
         fig.suptitle("Gantt Charts — All Algorithms",
-                     color=PALETTE["text"], fontsize=14, fontweight="bold", y=1.01)
-        fig.tight_layout(pad=0.8, h_pad=0.6)
+                     color=PALETTE["text"], fontsize=14, fontweight="bold", y=0.99)
+        fig.tight_layout(pad=0.8, h_pad=0.6, rect=[0, 0, 1, 0.88])
 
         canvas = FigureCanvas(fig)
         canvas.setStyleSheet(f"background: {PALETTE['surface']}; border-radius: 8px;")
