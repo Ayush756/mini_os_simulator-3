@@ -8,7 +8,7 @@ import random
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QComboBox, QHeaderView,
-    QFrame, QMessageBox,
+    QFrame, QMessageBox, QScrollArea,
 )
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont, QColor
@@ -17,6 +17,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+import matplotlib.patheffects as pe
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
 PALETTE = {
@@ -120,14 +121,26 @@ class MemoryCanvas(FigureCanvas):
 
         n = len(block_sizes)
         fig_w = max(10, n * 2.2)
-        self.fig, self.axes = plt.subplots(1, n, figsize=(fig_w, 5.5))
+        
+        n_total_patches = len(proc_labels) + 1
+        ncol = min(n_total_patches, 5)
+        max_legend_rows = -(-n_total_patches // ncol)
+        
+        bottom_margin_inches = 0.2 + (0.35 * max_legend_rows)
+        fig_h = 5.0 + 0.6 + bottom_margin_inches
+        
+        self.rect_bottom = bottom_margin_inches / fig_h
+        self.rect_top = (bottom_margin_inches + 5.0) / fig_h
+
+        self.fig, self.axes = plt.subplots(1, n, figsize=(fig_w, fig_h))
         if n == 1:
             self.axes = [self.axes]
         self.fig.patch.set_facecolor(PALETTE["surface"])
 
         super().__init__(self.fig)
         self.setStyleSheet(f"background: {PALETTE['surface']};")
-        self.setMinimumHeight(320)
+        self.setMinimumHeight(int(fig_h * 100))
+        self.setMinimumWidth(int(fig_w * 100))
         self._render()
 
     def reveal_next(self):
@@ -140,6 +153,7 @@ class MemoryCanvas(FigureCanvas):
 
     def _render(self):
         n = len(self.block_sizes)
+        max_total = max(self.block_sizes) if n > 0 else 1
 
         # block -> processes revealed so far
         b2p = {j: [] for j in range(n)}
@@ -157,19 +171,23 @@ class MemoryCanvas(FigureCanvas):
             for i in b2p[j]:
                 h     = self.proc_sizes[i]
                 color = PROCESS_COLORS[i % len(PROCESS_COLORS)]
-                ax.bar(0, h, bottom=bottom, width=0.72,
-                       color=color, edgecolor=PALETTE["bg"], linewidth=2)
+                ax.bar(0, h, bottom=bottom, width=0.76,
+                       color=color, edgecolor=PALETTE["bg"], linewidth=3, zorder=3,
+                       path_effects=[
+                           pe.SimplePatchShadow(offset=(2, -2), shadow_rgbFace=(0, 0, 0), alpha=0.35),
+                           pe.Normal()
+                       ])
                 # Label density scales with the segment's share of the block —
                 # forcing a readable font on a sliver-thin segment is what was
                 # causing neighboring labels to overlap, so segments too thin
                 # for a full two-line label fall back to a shorter one, and
                 # segments too thin for that get no in-bar label at all (they
                 # still appear in the legend and results table below).
-                frac = h / total
-                if frac >= 0.06:
-                    fs = max(8, min(12, int(frac * 60)))
+                visual_frac = h / max_total
+                if visual_frac >= 0.05:
+                    fs = max(8, min(14, int(visual_frac * 80)))
                     label = f"{self.proc_labels[i]}\n{h} KB"
-                elif frac >= 0.028:
+                elif visual_frac >= 0.02:
                     fs = 8
                     label = self.proc_labels[i]
                 else:
@@ -177,7 +195,9 @@ class MemoryCanvas(FigureCanvas):
                 if label:
                     ax.text(0, bottom + h / 2, label,
                             ha="center", va="center",
-                            color="white", fontsize=fs, fontweight="bold")
+                            color="white", fontsize=fs, fontweight="bold",
+                            clip_on=True,
+                            path_effects=[pe.withStroke(linewidth=2.5, foreground=PALETTE["bg"])])
                 bottom += h
 
             # remaining free space — always shown as a block, label only if it fits
@@ -185,15 +205,15 @@ class MemoryCanvas(FigureCanvas):
             used_so_far = sum(self.proc_sizes[i] for i in b2p[j])
             free_so_far = total - used_so_far
             if free_so_far > 0:
-                ax.bar(0, free_so_far, bottom=bottom, width=0.72,
-                       color=PALETTE["free"],
-                       edgecolor=PALETTE["border"], linewidth=1.5,
-                       linestyle="--")
-                frac = free_so_far / total
-                if frac >= 0.06:
-                    fs = max(8, min(11, int(frac * 60)))
+                ax.bar(0, free_so_far, bottom=bottom, width=0.76,
+                       color=PALETTE["free"], alpha=0.7,
+                       edgecolor=PALETTE["border"], linewidth=2,
+                       hatch='////', zorder=3)
+                visual_frac = free_so_far / max_total
+                if visual_frac >= 0.05:
+                    fs = max(8, min(14, int(visual_frac * 80)))
                     free_label = f"Free\n{free_so_far} KB"
-                elif frac >= 0.028:
+                elif visual_frac >= 0.02:
                     fs = 8
                     free_label = "Free"
                 else:
@@ -201,19 +221,26 @@ class MemoryCanvas(FigureCanvas):
                 if free_label:
                     ax.text(0, bottom + free_so_far / 2, free_label,
                             ha="center", va="center",
-                            color=PALETTE["muted"], fontsize=fs)
+                            color=PALETTE["muted"], fontsize=fs,
+                            clip_on=True)
 
             ax.set_xlim(-0.6, 0.6)
-            ax.set_ylim(0, total * 1.06)
+            ax.set_ylim(0, max_total * 1.06)
             ax.set_xticks([])
             ax.set_yticks([0, total])
-            ax.yaxis.set_tick_params(labelsize=9, labelcolor=PALETTE["muted"])
+            ax.yaxis.grid(True, color=PALETTE["border"], linestyle=":", linewidth=1.5, zorder=0)
+            ax.yaxis.set_tick_params(labelsize=10, labelcolor=PALETTE["muted"])
             ax.set_title(f"{self.block_labels[j]}\n{total} KB",
                          color=PALETTE["text"], fontsize=11,
-                         pad=8, fontweight="bold")
-            for spine in ax.spines.values():
-                spine.set_edgecolor(PALETTE["border"])
-                spine.set_linewidth(1.2)
+                         pad=14, fontweight="bold",
+                         bbox=dict(facecolor=PALETTE["surface"], edgecolor=PALETTE["border"],
+                                   boxstyle="round,pad=0.5", linewidth=1.5))
+            
+            for spine in ["top", "right", "bottom"]:
+                ax.spines[spine].set_visible(False)
+            ax.spines["left"].set_edgecolor(PALETTE["border"])
+            ax.spines["left"].set_linewidth(1.5)
+            ax.spines["left"].set_bounds(0, total)
 
         # Legend
         patches = [
@@ -239,9 +266,10 @@ class MemoryCanvas(FigureCanvas):
         self._legend_artist = self.fig.legend(
             handles=patches,
             loc="lower center", ncol=ncol,
-            framealpha=0.4, facecolor=PALETTE["bg"],
+            framealpha=0.8, facecolor=PALETTE["surface"],
             edgecolor=PALETTE["border"], labelcolor=PALETTE["text"],
             fontsize=10, bbox_to_anchor=(0.5, 0.01),
+            shadow=True, fancybox=True
         )
 
         n_allocated = sum(1 for j in self.alloc[:self.n_revealed] if j is not None)
@@ -255,12 +283,9 @@ class MemoryCanvas(FigureCanvas):
             color=PALETTE["text"], fontsize=13, fontweight="bold", y=0.99,
         )
 
-        # Reserve real space (not just padding) at the top for the suptitle
-        # and at the bottom for the legend, scaled to how many legend rows
-        # there are — this is what was letting the legend and suptitle
-        # crowd/overlap the axes' tick labels and per-block titles.
-        bottom_margin = 0.12 + 0.055 * (n_legend_rows - 1)
-        self.fig.tight_layout(pad=1.4, rect=[0, bottom_margin, 1, 0.90])
+        # Ensure the axes maintain exactly 5.0 inches of vertical space regardless
+        # of how many legend rows are generated, preventing blocks from squishing.
+        self.fig.tight_layout(pad=1.4, rect=[0, self.rect_bottom, 1, self.rect_top])
         self.draw()
 
 
@@ -473,7 +498,12 @@ class MemoryManagementWidget(QWidget):
         # Build canvas starting with 0 processes revealed
         self._canvas = MemoryCanvas(blabels, bsizes, plabels, psizes,
                                     alloc, rem, algo)
-        self.output_area.addWidget(self._canvas)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet(f"background: {PALETTE['bg']}; border: none;")
+        scroll.setWidget(self._canvas)
+        scroll.setMinimumHeight(self._canvas.minimumHeight() + 20)
+        self.output_area.addWidget(scroll)
 
         # Results table below (shown immediately)
         self._draw_results_table(blabels, bsizes, plabels, psizes, alloc, rem)
@@ -505,6 +535,7 @@ class MemoryManagementWidget(QWidget):
             ["Process", "Size (KB)", "Allocated Block", "Fragmentation (KB)"]
         )
         tbl.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        tbl.horizontalHeader().setMinimumSectionSize(160)
         tbl.verticalHeader().setVisible(False)
         tbl.verticalHeader().setDefaultSectionSize(44)
         tbl.setStyleSheet(TABLE_STYLE)
