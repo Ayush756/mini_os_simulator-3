@@ -1,6 +1,7 @@
 # Mini OS Simulator
 
 An educational, GUI-based desktop application that visualizes core Operating System algorithms.
+We try to visualoze the cpu_scheduling , memory camparisons.
 
 ## Requirements
 
